@@ -1,0 +1,447 @@
+package com.mycompany.foodorderingsystem;
+
+import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import java.awt.event.*;
+import java.sql.*;
+import java.util.Vector;
+
+/**
+ * Cart JFrame for customers to select restaurant, view menu, and add items to cart.
+ */
+public class Cart extends javax.swing.JFrame {
+    private String cusId;
+    private String cartId;
+    private Connection con;
+
+    public Cart(String cusId) {
+        this.cusId = cusId;
+        initComponents();
+        initDB();
+        ensureCartExists();
+        loadRestaurants();
+    }
+
+    private void initDB() {
+        try {
+            Class.forName("oracle.jdbc.driver.OracleDriver");
+            con = DriverManager.getConnection("jdbc:oracle:thin:@localhost:1521:xe", "system", "orcl");
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Database connection error: " + e.getMessage());
+        }
+    }
+
+    private void ensureCartExists() {
+        try {
+            // Check for existing cart
+            PreparedStatement ps = con.prepareStatement("SELECT cart_id FROM CART WHERE cus_id = ?");
+            ps.setString(1, cusId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                cartId = rs.getString("cart_id");
+            } else {
+                // create new cart
+                cartId = "CART" + System.currentTimeMillis();
+                ps = con.prepareStatement("INSERT INTO CART(cart_id,cus_id) VALUES(?,?)");
+                ps.setString(1, cartId);
+                ps.setString(2, cusId);
+                ps.executeUpdate();
+            }
+            rs.close(); ps.close();
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Error initializing cart: " + e.getMessage());
+        }
+    }
+
+    private void loadRestaurants() {
+        try {
+            PreparedStatement ps = con.prepareStatement("SELECT res_id, res_name FROM RESTAURANT");
+            ResultSet rs = ps.executeQuery();
+            comboRestaurants.removeAllItems();
+            while (rs.next()) {
+                comboRestaurants.addItem(rs.getString("res_id") + ": " + rs.getString("res_name"));
+            }
+            rs.close(); ps.close();
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Error loading restaurants: " + e.getMessage());
+        }
+    }
+
+    private void loadMenu(String resId) {
+        try {
+            PreparedStatement ps = con.prepareStatement(
+                "SELECT m.food_id, f.food_name, m.price " +
+                "FROM MENU m JOIN FOOD_ITEM f ON m.food_id = f.food_id " +
+                "WHERE m.res_id = ? AND m.available = 'Yes'");
+            ps.setString(1, resId);
+            ResultSet rs = ps.executeQuery();
+            DefaultTableModel model = (DefaultTableModel) tableMenu.getModel();
+            model.setRowCount(0);
+            while (rs.next()) {
+                model.addRow(new Object[]{rs.getString("food_id"), rs.getString("food_name"), rs.getDouble("price"), 1});
+            }
+            rs.close(); ps.close();
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Error loading menu: " + e.getMessage());
+        }
+    }
+
+    private void addToCart() {
+        int sel = tableMenu.getSelectedRow();
+        if (sel < 0) {
+            JOptionPane.showMessageDialog(this, "Please select an item to add.");
+            return;
+        }
+        DefaultTableModel model = (DefaultTableModel) tableMenu.getModel();
+        String foodId = (String) model.getValueAt(sel, 0);
+        double price = (Double) model.getValueAt(sel, 2);
+        try {
+            // check existing
+            PreparedStatement ps = con.prepareStatement(
+                "SELECT quantity FROM CART_ITEMS WHERE cart_id = ? AND food_id = ?");
+            ps.setString(1, cartId);
+            ps.setString(2, foodId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                // update
+                PreparedStatement up = con.prepareStatement(
+                    "UPDATE CART_ITEMS SET quantity = quantity + 1 WHERE cart_id = ? AND food_id = ?");
+                up.setString(1, cartId);
+                up.setString(2, foodId);
+                up.executeUpdate();
+                up.close();
+            } else {
+                // insert
+                PreparedStatement ins = con.prepareStatement(
+                    "INSERT INTO CART_ITEMS(cart_id, food_id, quantity, price) VALUES(?,?,?,?)");
+                ins.setString(1, cartId);
+                ins.setString(2, foodId);
+                ins.setInt(3, 1);
+                ins.setDouble(4, price);
+                ins.executeUpdate();
+                ins.close();
+            }
+            rs.close(); ps.close();
+            JOptionPane.showMessageDialog(this, "Item added to cart.");
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Error adding to cart: " + e.getMessage());
+        }
+    }
+
+    private void openCartList() {
+        new CartList(cusId, cartId).setVisible(true);
+        this.dispose();
+    }
+
+    /**
+     * This method is called from within the constructor to initialize the form.
+     * WARNING: Do NOT modify this code. The content of this method is always
+     * regenerated by the Form Editor.
+     */
+    @SuppressWarnings("unchecked")
+    // <editor-fold defaultstate="collapsed" desc="Generated Code">                          
+    private void initComponents() {
+
+        comboRestaurants = new javax.swing.JComboBox<>();
+        jScrollPane1 = new javax.swing.JScrollPane();
+        tableMenu = new javax.swing.JTable();
+        btnAdd = new javax.swing.JButton();
+        btnDone = new javax.swing.JButton();
+
+        setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
+
+        comboRestaurants.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                String item = (String) comboRestaurants.getSelectedItem();
+                if (item != null) {
+                    String resId = item.split(":")[0];
+                    loadMenu(resId);
+                }
+            }
+        });
+
+        tableMenu.setModel(new DefaultTableModel(
+            new Object [][] {},
+            new String [] {"Food ID", "Food Name", "Price", "Qty"}
+        ));
+        jScrollPane1.setViewportView(tableMenu);
+
+        btnAdd.setText("Add to Cart");
+        btnAdd.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                addToCart();
+            }
+        });
+
+        btnDone.setText("Done");
+        btnDone.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                openCartList();
+            }
+        });
+
+        javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
+        getContentPane().setLayout(layout);
+        layout.setHorizontalGroup(
+            layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGroup(layout.createSequentialGroup()
+                .addContainerGap()
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addComponent(comboRestaurants, 0, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                    .addComponent(jScrollPane1)
+                    .addGroup(layout.createSequentialGroup()
+                        .addComponent(btnAdd)
+                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                        .addComponent(btnDone)))
+                .addContainerGap())
+        );
+        layout.setVerticalGroup(
+            layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGroup(layout.createSequentialGroup()
+                .addContainerGap()
+                .addComponent(comboRestaurants, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
+                .addComponent(jScrollPane1, javax.swing.GroupLayout.PREFERRED_SIZE, 200, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addGap(18, 18, 18)
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(btnAdd)
+                    .addComponent(btnDone))
+                .addContainerGap(20, Short.MAX_VALUE))
+        );
+
+        pack();
+    }// </editor-fold>                        
+
+    // Variables declaration - do not modify                     
+    private javax.swing.JButton btnAdd;
+    private javax.swing.JButton btnDone;
+    private javax.swing.JComboBox<String> comboRestaurants;
+    private javax.swing.JScrollPane jScrollPane1;
+    private javax.swing.JTable tableMenu;
+    // End of variables declaration                   
+}
+
+
+/**
+ * CartList JFrame for customers to review and modify cart items.
+ */
+class CartList extends javax.swing.JFrame {
+    private String cusId;
+    private String cartId;
+    private Connection con;
+
+    public CartList(String cusId, String cartId) {
+        this.cusId = cusId;
+        this.cartId = cartId;
+        initComponents();
+        initDB();
+        loadCartItems();
+    }
+
+    private void initDB() {
+        try {
+            Class.forName("oracle.jdbc.driver.OracleDriver");
+            con = DriverManager.getConnection("jdbc:oracle:thin:@localhost:1521:xe", "system", "orcl");
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Database connection error: " + e.getMessage());
+        }
+    }
+
+    private void loadCartItems() {
+        try {
+            PreparedStatement ps = con.prepareStatement(
+                "SELECT f.food_name, c.quantity, c.price " +
+                "FROM CART_ITEMS c JOIN FOOD_ITEM f ON c.food_id = f.food_id " +
+                "WHERE c.cart_id = ?");
+            ps.setString(1, cartId);
+            ResultSet rs = ps.executeQuery();
+            DefaultTableModel model = (DefaultTableModel) tableCart.getModel();
+            model.setRowCount(0);
+            while (rs.next()) {
+                model.addRow(new Object[]{rs.getString("food_name"), rs.getInt("quantity"), rs.getDouble("price")});
+            }
+            rs.close(); ps.close();
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Error loading cart items: " + e.getMessage());
+        }
+    }
+
+    private void removeItem() {
+        int sel = tableCart.getSelectedRow();
+        if (sel < 0) {
+            JOptionPane.showMessageDialog(this, "Select an item to remove.");
+            return;
+        }
+        String foodName = (String) tableCart.getValueAt(sel, 0);
+        try {
+            // find food_id by name
+            PreparedStatement psId = con.prepareStatement("SELECT food_id FROM FOOD_ITEM WHERE food_name = ?");
+            psId.setString(1, foodName);
+            ResultSet rsId = psId.executeQuery();
+            if (rsId.next()) {
+                String foodId = rsId.getString("food_id");
+                PreparedStatement psDel = con.prepareStatement(
+                    "DELETE FROM CART_ITEMS WHERE cart_id = ? AND food_id = ?");
+                psDel.setString(1, cartId);
+                psDel.setString(2, foodId);
+                psDel.executeUpdate();
+                psDel.close();
+            }
+            rsId.close(); psId.close();
+            loadCartItems();
+        } catch (SQLException e) {
+            JOptionPane.showMessageDialog(this, "Error removing item: " + e.getMessage());
+        }
+    }
+
+    private void goBack() {
+        new Cart(cusId).setVisible(true);
+        this.dispose();
+    }
+
+    @SuppressWarnings("unchecked")
+    // <editor-fold defaultstate="collapsed" desc="Generated Code">                          
+    private void initComponents() {
+
+        jScrollPane2 = new javax.swing.JScrollPane();
+        tableCart = new javax.swing.JTable();
+        btnRemove = new javax.swing.JButton();
+        btnBack = new javax.swing.JButton();
+
+        setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
+
+        tableCart.setModel(new DefaultTableModel(
+            new Object [][] {},
+            new String [] {"Food Name", "Quantity", "Price"}
+        ));
+        jScrollPane2.setViewportView(tableCart);
+
+        btnRemove.setText("Remove");
+        btnRemove.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                removeItem();
+            }
+        });
+
+        btnBack.setText("Back");
+        btnBack.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                goBack();
+            }
+        });
+
+        javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
+        getContentPane().setLayout(layout);
+        layout.setHorizontalGroup(
+            layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGroup(layout.createSequentialGroup()
+                .addContainerGap()
+                .addComponent(jScrollPane2, javax.swing.GroupLayout.DEFAULT_SIZE, 400, Short.MAX_VALUE)
+                .addContainerGap())
+            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, layout.createSequentialGroup()
+                .addContainerGap(javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                .addComponent(btnRemove)
+                .addGap(18, 18, 18)
+                .addComponent(btnBack)
+                .addGap(18, 18, 18))
+        );
+        layout.setVerticalGroup(
+            layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGroup(layout.createSequentialGroup()
+                .addContainerGap()
+                .addComponent(jScrollPane2, javax.swing.GroupLayout.PREFERRED_SIZE, 200, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addGap(18, 18, 18)
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(btnRemove)
+                    .addComponent(btnBack))
+                .addContainerGap(20, Short.MAX_VALUE))
+        );
+
+        pack();
+    }// </editor-fold>                        
+
+    // Variables declaration - do not modify                     
+    private javax.swing.JButton btnBack;
+    private javax.swing.JButton btnRemove;
+    private javax.swing.JScrollPane jScrollPane2;
+    private javax.swing.JTable tableCart;
+    // End of variables declaration                   
+}
+
+
+
+
+
+private void initComponents() {
+
+        jComboBox1 = new javax.swing.JComboBox<>();
+        jScrollPane1 = new javax.swing.JScrollPane();
+        jTable1 = new javax.swing.JTable();
+        jButton1 = new javax.swing.JButton();
+        jButton2 = new javax.swing.JButton();
+
+        setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
+
+        jComboBox1.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                String item = (String) jComboBox1.getSelectedItem();
+                if (item != null) {
+                    String resId = item.split(":")[0];
+                    loadMenu(resId);
+                }
+            }
+        });
+
+        jTable1.setModel(new DefaultTableModel(
+            new Object [][] {},
+            new String [] {"Food ID", "Food Name", "Price", "Qty"}
+        ));
+        jScrollPane1.setViewportView(jTable1);
+
+        jButton1.setText("Add to Cart");
+        jButton1.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                addToCart();
+            }
+        });
+
+        jButton2.setText("Done");
+        jButton2.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent evt) {
+                openCartList();
+            }
+        });
+
+        javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
+        getContentPane().setLayout(layout);
+        layout.setHorizontalGroup(
+            layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGroup(layout.createSequentialGroup()
+                .addContainerGap()
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addComponent(jComboBox1, 0, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                    .addComponent(jScrollPane1)
+                    .addGroup(layout.createSequentialGroup()
+                        .addComponent(jButton1)
+                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                        .addComponent(jButton2)))
+                .addContainerGap())
+        );
+        layout.setVerticalGroup(
+            layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGroup(layout.createSequentialGroup()
+                .addContainerGap()
+                .addComponent(jComboBox1, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
+                .addComponent(jScrollPane1, javax.swing.GroupLayout.PREFERRED_SIZE, 200, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addGap(18, 18, 18)
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                    .addComponent(jButton1)
+                    .addComponent(jButton2))
+                .addContainerGap(20, Short.MAX_VALUE))
+        );
+
+        pack();
+    }
+
+

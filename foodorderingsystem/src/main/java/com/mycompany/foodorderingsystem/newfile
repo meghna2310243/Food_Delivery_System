@@ -1,0 +1,22 @@
+
+import java.util.HashMap;
+import java.util.Map;
+
+private Map<String, String> saveStatusUpdates() {
+    Map<String, String> statusUpdates = new HashMap<>();
+
+    DefaultTableModel model = (DefaultTableModel) jTable1.getModel();
+    int rowCount = model.getRowCount();
+
+    for (int i = 0; i < rowCount; i++) {
+        String receiptId = (String) model.getValueAt(i, 0);  // Receipt Number
+        String status = (String) model.getValueAt(i, 2);     // Status column
+        statusUpdates.put(receiptId, status);
+    }
+
+    // Optional: Just to confirm it's working
+    System.out.println("Saved statuses:");
+    statusUpdates.forEach((id, stat) -> System.out.println(id + ": " + stat));
+
+    return statusUpdates;
+}
